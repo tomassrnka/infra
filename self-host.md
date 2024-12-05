@@ -1,4 +1,12 @@
 # Self-hosting E2B
+This guide is for running the E2B infrastructure on your own machines. We currently support GCP only.
+The next step is to support AWS, Azure, and general Linux machines.
+
+There are a few services that we require right now but we're working on removing our dependencies on them and switch to open-source alternatives:
+- [Cloudflare](https://cloudflare.com/)
+- [Supabase](https://supabase.com/)
+- [Atlas](https://atlasgo.io/)
+- [Posthog](https://posthog.com/)
 
 ## Prerequisites
 
