@@ -19,9 +19,12 @@
       ```
 
 - [Atlas](https://atlasgo.io/docs#installation)
+  ```sh
+  curl -sSf https://atlasgo.sh | ATLAS_VERSION=v0.25.0 sh
+  ```
   - Used for database migrations
-  - We don't use Atlas's hosted service, only their [open-source CLI tool](https://atlasgo.io/cli-reference) which unfortunatelly requires you to login via `atlas login`.
-  - We're in the process of removing this dependency.
+  - We don't use Atlas's hosted service, only their [open-source CLI tool](https://atlasgo.io/cli-reference).
+  - We're in the process of removing this dependency
 
 - [Google Cloud CLI](https://cloud.google.com/sdk/docs/install)
   - Used for managing the infrastructure on Google Cloud
