@@ -4,7 +4,7 @@ job "clickhouse-cluster" {
   node_pool   = "api"
 
   group "clickhouse-keeper" {
-    count = 1
+    count = 0
 
     network {
       port "keeper" {
@@ -57,24 +57,28 @@ job "clickhouse-cluster" {
 
     <storage_configuration>
         <disks>
-
+            <log_s3>
+                <type>s3</type>
+                <endpoint>https://storage.googleapis.com/${gcs_bucket}/${gcs_folder}/keeper/logs/</endpoint>
+                <access_key_id>${hmac_key}</access_key_id>
+                <secret_access_key>${hmac_secret}</secret_access_key>
+                <support_batch_delete>false</support_batch_delete>
+            </log_s3>
+            <snapshot_s3>
+                <type>s3</type>
+                <endpoint>https://storage.googleapis.com/${gcs_bucket}/${gcs_folder}/keeper/snapshots/</endpoint>
+                <access_key_id>${hmac_key}</access_key_id>
+                <secret_access_key>${hmac_secret}</secret_access_key>
+                <support_batch_delete>false</support_batch_delete>
+            </snapshot_s3>
+            <state_s3>
+                <type>s3</type>
+                <endpoint>https://storage.googleapis.com/${gcs_bucket}/${gcs_folder}/keeper/state/</endpoint>
+                <access_key_id>${hmac_key}</access_key_id>
+                <secret_access_key>${hmac_secret}</secret_access_key>
+                <support_batch_delete>false</support_batch_delete>
+            </state_s3>
         </disks>
-        <policies>
-            <keeper_logs>
-                <volumes>
-                    <main>
-                        <disk>log_s3_plain</disk>
-                    </main>
-                </volumes>
-            </keeper_logs>
-            <keeper_snapshots>
-                <volumes>
-                    <main>
-                        <disk>snapshot_s3_plain</disk>
-                    </main>
-                </volumes>
-            </keeper_snapshots>
-        </policies>
     </storage_configuration>
 </clickhouse>
 EOH
@@ -123,6 +127,11 @@ EOH
 
       kill_timeout = "120s"
 
+      env {
+        CLICKHOUSE_USERNAME           = "${clickhouse_username}"
+        CLICKHOUSE_PASSWORD           = "${clickhouse_password}"
+      }
+
       config {
         image = "clickhouse/clickhouse-server:${clickhouse_version}"
         ports = ["http", "tcp", "interserver"]
@@ -136,7 +145,7 @@ EOH
           "local/macros.xml:/etc/clickhouse-server/config.d/macros.xml",
           "local/storage_config.xml:/etc/clickhouse-server/config.d/storage.xml",
           "local/users.xml:/etc/clickhouse-server/users.d/users.xml",
-          "/var/lib/clickhouse:/var/lib/clickhouse"
+          # "/var/lib/clickhouse:/var/lib/clickhouse"
         ]
       }
 
@@ -149,8 +158,8 @@ EOH
     </logger>
     <zookeeper>
         <node>
-            <host>{{ range service "clickhouse-keeper" }}{{ .Address }}{{ end }}</host>
-            <port>{{ range service "clickhouse-keeper" }}{{ .Port }}{{ end }}</port>
+            <host>10.24.24.24</host>
+            <port>9181</port>
         </node>
     </zookeeper>
 
@@ -158,13 +167,7 @@ EOH
         <my_cluster>
             <shard>
                 <replica>
-                    <host>{{ env "NOMAD_IP_http" }}</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <shard>
-                <replica>
-                    <host>{{ range service "clickhouse-server-2" }}{{ .Address }}{{ end }}</host>
+                    <host>10.24.24.24</host>
                     <port>9000</port>
                 </replica>
             </shard>
@@ -172,7 +175,7 @@ EOH
     </remote_servers>
 
     <listen_host>0.0.0.0</listen_host>
-    <interserver_http_host>{{ env "NOMAD_IP_interserver" }}</interserver_http_host>
+    <interserver_http_host>10.24.24.24</interserver_http_host>
     
     # Enable waiting for shutdown
     <shutdown_wait_unfinished>60</shutdown_wait_unfinished>
@@ -187,25 +190,22 @@ EOH
 <clickhouse>
     <storage_configuration>
         <disks>
-            <s3_plain>
-                <type>s3_plain</type>
-                <endpoint>https://storage.googleapis.com/${gcs_bucket}/${gcs_folder}/</endpoint>
-                <access_key_id>${hmac_key}</access_key_id>
-                <secret_access_key>${hmac_secret}</secret_access_key>
-            </s3_plain>
+          <disk_name_1>
+            <path>/var/clickhouse/</path>
+        </disk_name_1>
         </disks>
         <policies>
-            <s3_plain>
+            <disk_name_1>
                 <volumes>
                     <main>
-                        <disk>s3_plain</disk>
+                        <disk>disk_name_1</disk>
                     </main>
                 </volumes>
-            </s3_plain>
+            </disk_name_1>
         </policies>
     </storage_configuration>
     <merge_tree>
-        <storage_policy>s3_plain</storage_policy>
+        <storage_policy>disk_name_1</storage_policy>
     </merge_tree>
 </clickhouse>
 EOH
