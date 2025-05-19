@@ -18,7 +18,6 @@ import (
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/e2b-dev/infra/packages/orchestrator/internal/consul"
 	"github.com/e2b-dev/infra/packages/orchestrator/internal/grpcserver"
 	"github.com/e2b-dev/infra/packages/orchestrator/internal/proxy"
 	"github.com/e2b-dev/infra/packages/orchestrator/internal/sandbox"
@@ -65,6 +64,9 @@ func main() {
 	}
 
 	success := run(*port, *proxyPort)
+
+	log.Println("Stopping orchestrator, success:", success)
+
 	if success == false {
 		os.Exit(1)
 	}
@@ -73,12 +75,15 @@ func main() {
 func run(port, proxyPort uint) (success bool) {
 	success = true
 
+	services := service.GetServices()
+
 	// Check if the orchestrator crashed and restarted
 	// Skip this check in development mode
-	if !env.IsDevelopment() {
+	// We don't want to lock if the service is running with force stop; the subsequent start would fail.
+	if !env.IsDevelopment() && !forceStop {
 		info, err := os.Stat(fileLockName)
 		if err == nil {
-			log.Printf("Orchestrator was already started at %s", info.ModTime())
+			log.Fatalf("Orchestrator was already started at %s, exiting", info.ModTime())
 		}
 
 		f, err := os.Create(fileLockName)
@@ -106,12 +111,11 @@ func run(port, proxyPort uint) (success bool) {
 	sig, sigCancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer sigCancel()
 
-	clientID := consul.GetClientID()
+	clientID := service.GetClientID()
 	if clientID == "" {
 		zap.L().Fatal("client ID is empty")
 	}
 
-	services := service.GetServices()
 	serviceName := service.GetServiceName(services)
 
 	serviceError := make(chan error)
@@ -198,7 +202,7 @@ func run(port, proxyPort uint) (success bool) {
 		zap.L().Fatal("failed to create sandbox proxy", zap.Error(err))
 	}
 
-	networkPool, err := network.NewPool(sig, network.NewSlotsPoolSize, network.ReusedSlotsPoolSize, clientID)
+	networkPool, err := network.NewPool(ctx, network.NewSlotsPoolSize, network.ReusedSlotsPoolSize, clientID)
 	if err != nil {
 		zap.L().Fatal("failed to create network pool", zap.Error(err))
 	}
@@ -254,7 +258,6 @@ func run(port, proxyPort uint) (success bool) {
 			devicePool,
 			sandboxProxy,
 			sandboxes,
-			clientID,
 		)
 
 		// Prepend to make sure it's awaited on graceful shutdown
@@ -267,7 +270,16 @@ func run(port, proxyPort uint) (success bool) {
 		zap.L().Info("Starting session proxy")
 		proxyErr := sandboxProxy.Start()
 		if proxyErr != nil && !errors.Is(proxyErr, http.ErrServerClosed) {
-			serviceError <- proxyErr
+			proxyErr = fmt.Errorf("proxy server: %w", proxyErr)
+			zap.L().Error("error starting proxy server", zap.Error(proxyErr))
+
+			select {
+			case serviceError <- proxyErr:
+			default:
+				// Don't block if the serviceError channel is already closed
+				// or if the error is already sent
+			}
+
 			return proxyErr
 		}
 
@@ -280,10 +292,19 @@ func run(port, proxyPort uint) (success bool) {
 		grpcErr := grpcSrv.Start(ctx, port)
 		if grpcErr != nil {
 			grpcErr = fmt.Errorf("grpc server: %w", grpcErr)
-			serviceError <- grpcErr
+			zap.L().Error("grpc server error", zap.Error(grpcErr))
+
+			select {
+			case serviceError <- grpcErr:
+			default:
+				// Don't block if the serviceError channel is already closed
+				// or if the error is already sent
+			}
+
+			return grpcErr
 		}
 
-		return grpcErr
+		return nil
 	})
 
 	// Wait for the shutdown signal or if some service fails
@@ -292,7 +313,6 @@ func run(port, proxyPort uint) (success bool) {
 		zap.L().Info("Shutdown signal received")
 	case serviceErr := <-serviceError:
 		zap.L().Error("Service error", zap.Error(serviceErr))
-		sigCancel()
 	}
 
 	closeCtx, cancelCloseCtx := context.WithCancel(context.Background())
