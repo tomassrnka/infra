@@ -496,6 +496,9 @@ components:
           $ref: "#/components/schemas/CPUCount"
         memoryMB:
           $ref: "#/components/schemas/MemoryMB"
+        firecrackerVersion:
+          description: Firecracker version to use for the template
+          type: string
 
     TemplateBuild:
       required:
