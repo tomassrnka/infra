@@ -172,6 +172,10 @@ func (a *APIStore) TemplateRequestBuild(c *gin.Context, templateID api.TemplateI
 		telemetry.SetAttributes(ctx, attribute.Int("env.memory_mb", int(*body.MemoryMB)))
 	}
 
+	if body.FirecrackerVersion != nil {
+		telemetry.SetAttributes(ctx, attribute.String("env.firecracker_version", *body.FirecrackerVersion))
+	}
+
 	cpuCount, ramMB, apiError := getCPUAndRAM(tier, body.CpuCount, body.MemoryMB)
 	if apiError != nil {
 		telemetry.ReportCriticalError(ctx, "error when getting CPU and RAM", apiError.Err)
@@ -211,7 +215,6 @@ func (a *APIStore) TemplateRequestBuild(c *gin.Context, templateID api.TemplateI
 		SetTeamID(team.ID).
 		SetCreatedBy(*userID).
 		SetPublic(false).
-		SetNillableClusterID(team.ClusterID).
 		OnConflictColumns(env.FieldID).
 		UpdateUpdatedAt().
 		Update(func(e *models.EnvUpsert) {
@@ -239,23 +242,10 @@ func (a *APIStore) TemplateRequestBuild(c *gin.Context, templateID api.TemplateI
 		return nil
 	}
 
-	var builderNodeID *string
-	if team.ClusterID != nil {
-		cluster, found := a.clustersPool.GetClusterById(*team.ClusterID)
-		if !found {
-			a.sendAPIStoreError(c, http.StatusBadRequest, fmt.Sprintf("Cluster with ID '%s' not found", *team.ClusterID))
-			telemetry.ReportCriticalError(ctx, "cluster not found", fmt.Errorf("cluster with ID '%s' not found", *team.ClusterID), telemetry.WithTemplateID(templateID))
-			return nil
-		}
-
-		clusterNode, err := cluster.GetAvailableTemplateBuilder(ctx)
-		if err != nil {
-			a.sendAPIStoreError(c, http.StatusInternalServerError, fmt.Sprintf("Error when getting available template builder: %s", err))
-			telemetry.ReportCriticalError(ctx, "error when getting available template builder", err, telemetry.WithTemplateID(templateID))
-			return nil
-		}
-
-		builderNodeID = &clusterNode.NodeID
+	// Determine firecracker version to use
+	firecrackerVersion := schema.DefaultFirecrackerVersion
+	if body.FirecrackerVersion != nil && *body.FirecrackerVersion != "" {
+		firecrackerVersion = *body.FirecrackerVersion
 	}
 
 	// Insert the new build
@@ -266,11 +256,10 @@ func (a *APIStore) TemplateRequestBuild(c *gin.Context, templateID api.TemplateI
 		SetRAMMB(ramMB).
 		SetVcpu(cpuCount).
 		SetKernelVersion(schema.DefaultKernelVersion).
-		SetFirecrackerVersion(schema.DefaultFirecrackerVersion).
+		SetFirecrackerVersion(firecrackerVersion).
 		SetFreeDiskSizeMB(tier.DiskMb).
 		SetNillableStartCmd(body.StartCmd).
 		SetNillableReadyCmd(body.ReadyCmd).
-		SetNillableClusterNodeID(builderNodeID).
 		SetDockerfile(body.Dockerfile).
 		Exec(ctx)
 	if err != nil {
