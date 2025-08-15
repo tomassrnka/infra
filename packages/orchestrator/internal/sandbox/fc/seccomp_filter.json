@@ -1,0 +1,231 @@
+{
+  "default_action": "SCMP_ACT_ERRNO",
+  "filter_action": "SCMP_ACT_ALLOW",
+  "architectures": [
+    {
+      "target_arch": "x86_64"
+    }
+  ],
+  "rules": [
+    {
+      "syscall": "accept4",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "brk",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "clock_gettime",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "close",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "dup",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "epoll_ctl",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "epoll_pwait",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "epoll_wait",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "exit",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "exit_group",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "fcntl",
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 1,
+          "type": "SCMP_CMP_EQ",
+          "value": 2,
+          "value2": 0,
+          "op": "SCMP_CMP_EQ"
+        }
+      ]
+    },
+    {
+      "syscall": "fcntl",
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 1,
+          "type": "SCMP_CMP_EQ",
+          "value": 3,
+          "value2": 0,
+          "op": "SCMP_CMP_EQ"
+        }
+      ]
+    },
+    {
+      "syscall": "fcntl",
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 1,
+          "type": "SCMP_CMP_EQ",
+          "value": 4,
+          "value2": 0,
+          "op": "SCMP_CMP_EQ"
+        }
+      ]
+    },
+    {
+      "syscall": "fstat",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "futex",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "getrandom",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "ioctl",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "lseek",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "madvise",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "mmap",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "mprotect",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "mremap",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "munmap",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "open",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "openat",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "pipe",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "read",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "readv",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "recvfrom",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "recvmsg",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "rt_sigaction",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "rt_sigprocmask",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "rt_sigreturn",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "sched_getaffinity",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "sendmsg",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "set_tid_address",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "sigaltstack",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "socket",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "stat",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "statx",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "tgkill",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "timerfd_create",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "timerfd_settime",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "tkill",
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 1,
+          "type": "SCMP_CMP_EQ",
+          "value": 33,
+          "value2": 0,
+          "op": "SCMP_CMP_EQ"
+        }
+      ]
+    },
+    {
+      "syscall": "write",
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "syscall": "writev",
+      "action": "SCMP_ACT_ALLOW"
+    }
+  ]
+}

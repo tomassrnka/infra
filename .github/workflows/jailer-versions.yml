@@ -1,0 +1,53 @@
+name: Build and Upload Jailer Versions
+
+on:
+  push:
+    paths:
+      - 'packages/jailer-versions/jailer_versions.txt'
+      - '.github/workflows/jailer-versions.yml'
+  workflow_dispatch:
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up build environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential musl-tools
+
+      - name: Build jailer versions
+        working-directory: packages/jailer-versions
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Upload to GCS (Staging)
+        if: github.ref != 'refs/heads/main'
+        working-directory: packages/jailer-versions
+        run: |
+          chmod +x upload.sh
+          ./upload.sh ${{ vars.GCP_PROJECT_ID_STAGING }}
+
+      - name: Upload to GCS (Production)
+        if: github.ref == 'refs/heads/main'
+        working-directory: packages/jailer-versions
+        run: |
+          chmod +x upload.sh
+          ./upload.sh ${{ vars.GCP_PROJECT_ID_PROD }}
