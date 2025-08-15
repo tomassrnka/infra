@@ -278,6 +278,10 @@ func (bb *BaseBuilder) buildLayerFromOCI(
 			InitScriptPath:      constants.SystemdInitPath,
 			KernelLogs:          env.IsDevelopment(),
 			SystemdToKernelLogs: false,
+			
+			// This is a template build phase - parent should stay alive for VM reboots
+			// Do NOT use --daemonize so parent can handle systemd reboots
+			IsProvisionPhase: false,
 		},
 		nil,
 	)
