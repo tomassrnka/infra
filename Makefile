@@ -205,6 +205,12 @@ build-and-upload/%:
 copy-public-builds:
 	gsutil cp -r gs://e2b-prod-public-builds/kernels/* gs://$(GCP_PROJECT_ID)-fc-kernels/
 	gsutil cp -r gs://e2b-prod-public-builds/firecrackers/* gs://$(GCP_PROJECT_ID)-fc-versions/
+	@if ! gsutil cp -r gs://e2b-prod-public-builds/jailers/* gs://$(GCP_PROJECT_ID)-jailer-versions/ 2>/dev/null; then \
+		echo "Jailer binaries not in public builds, downloading from GitHub releases..."; \
+		cd packages/jailer-versions && \
+		./download-prebuilt.sh && \
+		./upload.sh $(GCP_PROJECT_ID); \
+	fi
 
 
 .PHONY: generate

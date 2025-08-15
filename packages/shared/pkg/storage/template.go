@@ -8,8 +8,18 @@ import (
 const (
 	EnvsDisk = "/mnt/disks/fc-envs/v1"
 
+	KernelsDir     = "/fc-kernels"
+	KernelMountDir = "/fc-vm"
+	KernelName     = "vmlinux.bin"
+
 	HostEnvdPath  = "/fc-envd/envd"
 	GuestEnvdPath = "/usr/bin/envd"
+
+	FirecrackerVersionsDir = "/fc-versions"
+	FirecrackerBinaryName  = "firecracker"
+
+	JailerVersionsDir = "/jailer-versions"
+	JailerBinaryName  = "jailer"
 
 	buildDirName = "builds"
 
@@ -25,16 +35,41 @@ type TemplateFiles struct {
 	BuildID            string `json:"build_id"`
 	KernelVersion      string `json:"kernel_version"`
 	FirecrackerVersion string `json:"firecracker_version"`
+	JailerVersion      string `json:"jailer_version,omitempty"`
 }
 
-type RootfsPaths struct {
-	TemplateID string
-	BuildID    string
+func (t TemplateFiles) BuildKernelPath() string {
+	return filepath.Join(t.BuildKernelDir(), KernelName)
+}
+
+func (t TemplateFiles) BuildKernelDir() string {
+	return filepath.Join(KernelMountDir, t.KernelVersion)
 }
 
 // Key for the cache. Unique for template-build pair.
 func (t TemplateFiles) CacheKey() string {
 	return fmt.Sprintf("%s-%s", t.TemplateID, t.BuildID)
+}
+
+func (t TemplateFiles) CacheKernelDir() string {
+	return filepath.Join(KernelsDir, t.KernelVersion)
+}
+
+func (t TemplateFiles) CacheKernelPath() string {
+	return filepath.Join(t.CacheKernelDir(), KernelName)
+}
+
+func (t TemplateFiles) FirecrackerPath() string {
+	return filepath.Join(FirecrackerVersionsDir, t.FirecrackerVersion, FirecrackerBinaryName)
+}
+
+func (t TemplateFiles) JailerPath() string {
+	// Use same version as Firecracker if JailerVersion not specified (backward compatibility)
+	jailerVersion := t.JailerVersion
+	if jailerVersion == "" {
+		jailerVersion = t.FirecrackerVersion
+	}
+	return filepath.Join(JailerVersionsDir, jailerVersion, JailerBinaryName)
 }
 
 func (t TemplateFiles) StorageDir() string {
@@ -61,10 +96,10 @@ func (t TemplateFiles) StorageSnapfilePath() string {
 	return fmt.Sprintf("%s/%s", t.StorageDir(), SnapfileName)
 }
 
-func (t RootfsPaths) SandboxBuildDir() string {
+func (t TemplateFiles) SandboxBuildDir() string {
 	return filepath.Join(EnvsDisk, t.TemplateID, buildDirName, t.BuildID)
 }
 
-func (t RootfsPaths) SandboxRootfsPath() string {
+func (t TemplateFiles) SandboxRootfsPath() string {
 	return filepath.Join(t.SandboxBuildDir(), RootfsName)
 }

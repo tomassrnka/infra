@@ -6,9 +6,9 @@ import (
 
 	"github.com/firecracker-microvm/firecracker-go-sdk"
 	"github.com/go-openapi/strfmt"
+	"go.uber.org/zap"
 
 	"github.com/e2b-dev/infra/packages/orchestrator/internal/sandbox/socket"
-	"github.com/e2b-dev/infra/packages/orchestrator/internal/sandbox/template"
 	"github.com/e2b-dev/infra/packages/shared/pkg/fc/client"
 	"github.com/e2b-dev/infra/packages/shared/pkg/fc/client/operations"
 	"github.com/e2b-dev/infra/packages/shared/pkg/fc/models"
@@ -19,6 +19,8 @@ type apiClient struct {
 }
 
 func newApiClient(socketPath string) *apiClient {
+	zap.L().Info("creating Firecracker API client", zap.String("socket_path", socketPath))
+	
 	client := client.NewHTTPClient(strfmt.NewFormats())
 
 	transport := firecracker.NewUnixSocketTransport(socketPath, nil, false)
@@ -33,20 +35,40 @@ func (c *apiClient) loadSnapshot(
 	ctx context.Context,
 	uffdSocketPath string,
 	uffdReady chan struct{},
-	snapfile template.File,
+	snapfilePath string,
 ) error {
-	err := socket.Wait(ctx, uffdSocketPath)
+	return c.loadSnapshotWithPaths(ctx, uffdSocketPath, uffdSocketPath, uffdReady, snapfilePath)
+}
+
+func (c *apiClient) loadSnapshotWithPaths(
+	ctx context.Context,
+	waitSocketPath string,    // Path for orchestrator to wait on (jail-aware)
+	apiSocketPath string,     // Path for Firecracker API (jail-internal)
+	uffdReady chan struct{},
+	snapfilePath string,
+) error {
+	zap.L().Info("starting snapshot load", 
+		zap.String("wait_socket_path", waitSocketPath),
+		zap.String("api_socket_path", apiSocketPath),
+		zap.String("snapshot_path", snapfilePath))
+	
+	err := socket.Wait(ctx, waitSocketPath)
 	if err != nil {
+		zap.L().Error("loadSnapshot failed", 
+			zap.String("error", err.Error()),
+			zap.String("wait_socket_path", waitSocketPath))
 		return fmt.Errorf("error waiting for uffd socket: %w", err)
 	}
+	
+	zap.L().Info("UFFD socket found, proceeding with snapshot load",
+		zap.String("wait_socket_path", waitSocketPath))
 
 	backendType := models.MemoryBackendBackendTypeUffd
 	backend := &models.MemoryBackend{
-		BackendPath: &uffdSocketPath,
+		BackendPath: &apiSocketPath,
 		BackendType: &backendType,
 	}
 
-	snapfilePath := snapfile.Path()
 	snapshotConfig := operations.LoadSnapshotParams{
 		Context: ctx,
 		Body: &models.SnapshotLoadParams{
@@ -143,6 +165,10 @@ func (c *apiClient) setMmds(ctx context.Context, metadata *MmdsMetadata) error {
 }
 
 func (c *apiClient) setBootSource(ctx context.Context, kernelArgs string, kernelPath string) error {
+	zap.L().Info("setting Firecracker boot source", 
+		zap.String("kernel_path", kernelPath),
+		zap.String("kernel_args", kernelArgs))
+	
 	bootSourceConfig := operations.PutGuestBootSourceParams{
 		Context: ctx,
 		Body: &models.BootSource{
@@ -153,9 +179,11 @@ func (c *apiClient) setBootSource(ctx context.Context, kernelArgs string, kernel
 
 	_, err := c.client.Operations.PutGuestBootSource(&bootSourceConfig)
 	if err != nil {
+		zap.L().Error("failed to set Firecracker boot source", zap.Error(err))
 		return fmt.Errorf("error setting fc boot source config: %w", err)
 	}
 
+	zap.L().Info("successfully set Firecracker boot source")
 	return nil
 }
 
@@ -246,6 +274,8 @@ func (c *apiClient) setMachineConfig(
 }
 
 func (c *apiClient) startVM(ctx context.Context) error {
+	zap.L().Info("starting Firecracker VM via API")
+	
 	start := models.InstanceActionInfoActionTypeInstanceStart
 	startActionParams := operations.CreateSyncActionParams{
 		Context: ctx,
@@ -256,7 +286,27 @@ func (c *apiClient) startVM(ctx context.Context) error {
 
 	_, err := c.client.Operations.CreateSyncAction(&startActionParams)
 	if err != nil {
+		zap.L().Error("failed to start Firecracker VM", zap.Error(err))
 		return fmt.Errorf("error starting fc: %w", err)
+	}
+
+	zap.L().Info("successfully started Firecracker VM")
+	return nil
+}
+
+func (c *apiClient) setLogger(ctx context.Context, logPath string) error {
+	level := "Info"  // Use Info level to capture VM logs
+	loggerConfig := operations.PutLoggerParams{
+		Context: ctx,
+		Body: &models.Logger{
+			LogPath: logPath,  // Direct assignment, not pointer
+			Level:   &level,   // This needs to be pointer
+		},
+	}
+
+	_, err := c.client.Operations.PutLogger(&loggerConfig)
+	if err != nil {
+		return fmt.Errorf("error setting firecracker logger: %w", err)
 	}
 
 	return nil

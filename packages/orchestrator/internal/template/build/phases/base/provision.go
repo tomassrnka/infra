@@ -93,6 +93,10 @@ func (bb *BaseBuilder) provisionSandbox(
 			// Show provision script logs to the user
 			Stdout: logsWriter,
 			Stderr: logsWriter,
+			
+			// CRITICAL: This is a provision phase - VM should exit after completion
+			// Use --daemonize so WaitForExit() can detect when provision completes
+			IsProvisionPhase: true,
 		},
 		nil,
 	)
