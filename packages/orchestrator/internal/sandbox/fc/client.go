@@ -19,8 +19,6 @@ type apiClient struct {
 }
 
 func newApiClient(socketPath string) *apiClient {
-	zap.L().Info("creating Firecracker API client", zap.String("socket_path", socketPath))
-	
 	client := client.NewHTTPClient(strfmt.NewFormats())
 
 	transport := firecracker.NewUnixSocketTransport(socketPath, nil, false)
@@ -42,16 +40,11 @@ func (c *apiClient) loadSnapshot(
 
 func (c *apiClient) loadSnapshotWithPaths(
 	ctx context.Context,
-	waitSocketPath string,    // Path for orchestrator to wait on (jail-aware)
-	apiSocketPath string,     // Path for Firecracker API (jail-internal)
+	waitSocketPath string,
+	apiSocketPath string,
 	uffdReady chan struct{},
 	snapfilePath string,
 ) error {
-	zap.L().Info("starting snapshot load", 
-		zap.String("wait_socket_path", waitSocketPath),
-		zap.String("api_socket_path", apiSocketPath),
-		zap.String("snapshot_path", snapfilePath))
-	
 	err := socket.Wait(ctx, waitSocketPath)
 	if err != nil {
 		zap.L().Error("loadSnapshot failed", 
@@ -59,9 +52,6 @@ func (c *apiClient) loadSnapshotWithPaths(
 			zap.String("wait_socket_path", waitSocketPath))
 		return fmt.Errorf("error waiting for uffd socket: %w", err)
 	}
-	
-	zap.L().Info("UFFD socket found, proceeding with snapshot load",
-		zap.String("wait_socket_path", waitSocketPath))
 
 	backendType := models.MemoryBackendBackendTypeUffd
 	backend := &models.MemoryBackend{
@@ -88,7 +78,6 @@ func (c *apiClient) loadSnapshotWithPaths(
 	case <-ctx.Done():
 		return fmt.Errorf("context canceled while waiting for uffd ready: %w", ctx.Err())
 	case <-uffdReady:
-		// Wait for the uffd to be ready to serve requests
 	}
 
 	return nil
@@ -165,10 +154,6 @@ func (c *apiClient) setMmds(ctx context.Context, metadata *MmdsMetadata) error {
 }
 
 func (c *apiClient) setBootSource(ctx context.Context, kernelArgs string, kernelPath string) error {
-	zap.L().Info("setting Firecracker boot source", 
-		zap.String("kernel_path", kernelPath),
-		zap.String("kernel_args", kernelArgs))
-	
 	bootSourceConfig := operations.PutGuestBootSourceParams{
 		Context: ctx,
 		Body: &models.BootSource{
@@ -183,7 +168,6 @@ func (c *apiClient) setBootSource(ctx context.Context, kernelArgs string, kernel
 		return fmt.Errorf("error setting fc boot source config: %w", err)
 	}
 
-	zap.L().Info("successfully set Firecracker boot source")
 	return nil
 }
 
@@ -274,8 +258,6 @@ func (c *apiClient) setMachineConfig(
 }
 
 func (c *apiClient) startVM(ctx context.Context) error {
-	zap.L().Info("starting Firecracker VM via API")
-	
 	start := models.InstanceActionInfoActionTypeInstanceStart
 	startActionParams := operations.CreateSyncActionParams{
 		Context: ctx,
@@ -290,17 +272,16 @@ func (c *apiClient) startVM(ctx context.Context) error {
 		return fmt.Errorf("error starting fc: %w", err)
 	}
 
-	zap.L().Info("successfully started Firecracker VM")
 	return nil
 }
 
 func (c *apiClient) setLogger(ctx context.Context, logPath string) error {
-	level := "Info"  // Use Info level to capture VM logs
+	level := "Info"
 	loggerConfig := operations.PutLoggerParams{
 		Context: ctx,
 		Body: &models.Logger{
-			LogPath: logPath,  // Direct assignment, not pointer
-			Level:   &level,   // This needs to be pointer
+			LogPath: logPath,
+			Level:   &level,
 		},
 	}
 

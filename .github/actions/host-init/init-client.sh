@@ -2,10 +2,6 @@
 
 set -euo pipefail
 
-# Set timestamp format
-PS4='[\D{%Y-%m-%d %H:%M:%S}] '
-# Enable command tracing
-set -x
 
 # Add cache disk for orchestrator and swapfile
 MOUNT_POINT="/orchestrator"
@@ -41,7 +37,6 @@ sudo chmod 755 /jailer-versions /srv/jailer
 # Get GCP project ID from metadata server
 GCP_PROJECT_ID=$(curl -s "http://metadata.google.internal/computeMetadata/v1/project/project-id" -H "Metadata-Flavor: Google" 2>/dev/null || echo "")
 if [ -n "$GCP_PROJECT_ID" ]; then
-    echo "Downloading jailer binaries from gs://${GCP_PROJECT_ID}-jailer-versions..."
     sudo gsutil -m cp -r "gs://${GCP_PROJECT_ID}-jailer-versions/*" "/jailer-versions/" 2>/dev/null || {
         echo "Warning: Jailer binaries not available in project bucket, trying public bucket..."
         sudo gsutil -m cp -r "gs://e2b-prod-public-builds/jailers/*" "/jailer-versions/" 2>/dev/null || echo "Warning: Could not download jailer binaries"
@@ -55,8 +50,6 @@ if [ -d "/jailer-versions" ]; then
     sudo chmod -R 755 /jailer-versions
     # Ensure all jailer binaries are executable
     sudo find /jailer-versions -name "jailer" -type f -exec chmod +x {} \;
-    echo "Jailer setup complete. Available versions:"
-    ls -la /jailer-versions/ 2>/dev/null || echo "No jailer versions found"
 fi
 
 # Add tmpfs for snapshotting

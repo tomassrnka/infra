@@ -238,6 +238,9 @@ func (p *Process) prepareJailFiles() error {
 	if err := os.MkdirAll(expectedSocketDir, 0755); err != nil {
 		return fmt.Errorf("failed to create expected socket directory: %w", err)
 	}
+	zap.L().Info("created socket directory structure", 
+		zap.String("socket_dir", expectedSocketDir),
+		zap.String("sandbox_id", p.files.SandboxID))
 
 	// Note: The jailer automatically creates /dev/net/tun inside the jail
 	// We need to ensure the TAP interface created by E2B is properly accessible
@@ -249,7 +252,7 @@ func (p *Process) prepareJailFiles() error {
 	
 	// Try hard link first, then bind mount if cross-filesystem
 	if err := os.Link(p.files.CacheKernelPath(), jailKernel); err != nil {
-		// Hard link failed (likely cross-filesystem), create empty file and bind mount
+		// Hard link failed, create empty file and bind mount
 		if err := os.WriteFile(jailKernel, nil, 0444); err != nil {
 			return fmt.Errorf("failed to create kernel file in jail: %w", err)
 		}
@@ -428,7 +431,7 @@ func (p *Process) createNBDDeviceInJail() error {
 	} else {
 		// It's a regular file - use hard link first, then bind mount (never copy large files!)
 		if err := os.Link(p.rootfsPath, jailPath); err != nil {
-			// Hard link failed (likely cross-filesystem), create empty file and bind mount
+			// Hard link failed, create empty file and bind mount
 			if err := os.WriteFile(jailPath, nil, 0644); err != nil {
 				return fmt.Errorf("failed to create rootfs bind target in jail: %w", err)
 			}
@@ -508,6 +511,9 @@ func (p *Process) configure(
 	stderrWriter := &zapio.Writer{Log: sbxlogger.I(sbxMetadata).Logger, Level: zap.ErrorLevel}
 
 	// Prepare jail files
+	zap.L().Info("preparing jail environment", 
+		zap.String("jail_root", p.jailRoot),
+		zap.String("sandbox_id", p.files.SandboxID))
 	if err := p.prepareJailFiles(); err != nil {
 		return fmt.Errorf("failed to prepare jail files: %w", err)
 	}
@@ -549,7 +555,6 @@ func (p *Process) configure(
 			return
 		} else {
 			zap.L().Info("jailer parent process exited cleanly - VM has shut down", 
-				zap.String("stderr", stderrStr),
 				zap.String("sandbox_id", p.files.SandboxID))
 			
 			// Signal that the VM has exited (successful termination)
@@ -603,22 +608,16 @@ func (p *Process) waitForSocketAndCreateLink(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			// Log final state before giving up
+				// Log final state before giving up
 			if _, err := os.Stat(p.hostJailSocketPath); err != nil {
 				zap.L().Error("jail socket not found when timeout occurred", 
 					zap.String("jail_socket_path", p.hostJailSocketPath),
-					zap.Error(err))
-			}
-			if _, err := os.Stat(p.firecrackerSocketPath); err != nil {
-				zap.L().Error("expected socket not found when timeout occurred", 
-					zap.String("expected_socket_path", p.firecrackerSocketPath),
 					zap.Error(err))
 			}
 			return ctx.Err()
 		case <-ticker.C:
 			if _, err := os.Stat(p.hostJailSocketPath); err == nil {
 				// Socket exists in jail, create symlink to expected location
-				zap.L().Info("firecracker socket found in jail", zap.String("jail_socket_path", p.hostJailSocketPath))
 				
 				// Remove any existing socket at expected path
 				os.Remove(p.firecrackerSocketPath)
@@ -720,6 +719,9 @@ func (p *Process) Create(
 	}
 
 	// Configure Firecracker via API - use correct paths for jail
+	zap.L().Info("configuring VM boot source", 
+		zap.String("kernel_args", args.String()),
+		zap.String("sandbox_id", p.files.SandboxID))
 	err = p.client.setBootSource(childCtx, args.String(), "kernel")
 	if err != nil {
 		fcStopErr := p.Stop()
@@ -782,12 +784,16 @@ func (p *Process) Create(
 		zap.String("host_path", filepath.Join(p.jailRoot, "tmp", fmt.Sprintf("vm-console-%s.log", p.files.SandboxID))))
 	telemetry.ReportEvent(childCtx, "set fc logger config")
 
+	zap.L().Info("starting VM", 
+		zap.String("sandbox_id", p.files.SandboxID))
 	err = p.client.startVM(childCtx)
 	if err != nil {
 		fcStopErr := p.Stop()
 		return errors.Join(fmt.Errorf("error starting fc: %w", err), fcStopErr)
 	}
 
+	zap.L().Info("VM started successfully", 
+		zap.String("sandbox_id", p.files.SandboxID))
 	telemetry.ReportEvent(childCtx, "started fc")
 	return nil
 }
@@ -912,12 +918,16 @@ func (p *Process) Resume(
 			zap.String("sandbox_id", p.files.SandboxID))
 	}
 
+	zap.L().Info("resuming VM from snapshot", 
+		zap.String("sandbox_id", p.files.SandboxID))
 	err = p.client.resumeVM(childCtx)
 	if err != nil {
 		fcStopErr := p.Stop()
 		return errors.Join(fmt.Errorf("error resuming vm: %w", err), fcStopErr)
 	}
 
+	zap.L().Info("setting VM metadata", 
+		zap.String("sandbox_id", p.files.SandboxID))
 	err = p.client.setMmds(childCtx, mmdsMetadata)
 	if err != nil {
 		fcStopErr := p.Stop()
@@ -991,34 +1001,10 @@ func (p *Process) ResumeWithExistingJailer(
 		zap.L().Error("UFFD socket not found at wait path", 
 			zap.String("wait_path", waitUffdSocketPath),
 			zap.Error(err))
-	} else {
-		zap.L().Info("UFFD socket exists at wait path", 
-			zap.String("wait_path", waitUffdSocketPath))
 	}
 	
 	// Load snapshot - this should be FAST since everything is ready
 	// DON'T call Stop() here - let jailer complete startup first
-	// Debug: Check what files actually exist in the jail
-	zap.L().Info("jail contents before snapshot load")
-	if entries, err := os.ReadDir(p.jailRoot); err == nil {
-		for _, entry := range entries {
-			zap.L().Info("jail root entry", zap.String("name", entry.Name()), zap.Bool("is_dir", entry.IsDir()))
-		}
-	}
-	if entries, err := os.ReadDir(filepath.Join(p.jailRoot, "tmp")); err == nil {
-		for _, entry := range entries {
-			zap.L().Info("jail tmp entry", zap.String("name", entry.Name()), zap.Bool("is_dir", entry.IsDir()))
-		}
-	}
-	
-	// Check if Firecracker socket exists (should appear when FC starts)
-	fcSocketPath := filepath.Join(p.jailRoot, "run", "firecracker.socket")
-	if _, err := os.Stat(fcSocketPath); err != nil {
-		zap.L().Warn("Firecracker socket not found", zap.String("path", fcSocketPath), zap.Error(err))
-	} else {
-		zap.L().Info("Firecracker socket exists", zap.String("path", fcSocketPath))
-	}
-	
 	zap.L().Info("starting snapshot load", 
 		zap.String("jail_uffd_socket", jailUffdSocketPath),
 		zap.String("jail_snapfile", jailSnapfilePath),
@@ -1037,12 +1023,16 @@ func (p *Process) ResumeWithExistingJailer(
 		zap.String("sandbox_id", p.files.SandboxID))
 
 	// Resume VM - this should be FAST 
+	zap.L().Info("resuming VM with existing jailer", 
+		zap.String("sandbox_id", p.files.SandboxID))
 	err = p.client.resumeVM(childCtx)
 	if err != nil {
 		return fmt.Errorf("error resuming vm: %w", err)
 	}
 
 	// Set metadata - this should be FAST
+	zap.L().Info("setting VM metadata", 
+		zap.String("sandbox_id", p.files.SandboxID))
 	err = p.client.setMmds(childCtx, mmdsMetadata)
 	if err != nil {
 		return fmt.Errorf("error setting mmds: %w", err)
@@ -1111,7 +1101,7 @@ func (p *Process) waitForJailAndPrepareUffdSocket(ctx context.Context) error {
 			// Check if jail root exists (created by jailer)
 			jailRoot := filepath.Join("/srv/jailer/firecracker", p.files.SandboxID, "root")
 			if _, err := os.Stat(jailRoot); err != nil {
-				continue // Jail not ready yet
+				continue
 			}
 			
 			// Jail exists, now ensure run directory exists for UFFD socket
@@ -1187,7 +1177,7 @@ func (p *Process) waitForJailDirectory(ctx context.Context) error {
 		case <-ticker.C:
 			// Check if jail /tmp directory exists (created by jailer)
 			if _, err := os.Stat(jailTmpDir); err != nil {
-				continue // Jail not ready yet
+				continue
 			}
 			
 			// Directory exists, we're ready
@@ -1212,7 +1202,7 @@ func (p *Process) bindMountUffdSocketIntoJail(ctx context.Context, hostSocketPat
 			return fmt.Errorf("timeout waiting for UFFD socket: %w", ctx.Err())
 		case <-ticker.C:
 			if _, err := os.Stat(hostSocketPath); err != nil {
-				continue // Socket not ready yet
+				continue
 			}
 			goto bindMount // Socket exists, proceed
 		}
@@ -1294,7 +1284,8 @@ func (p *Process) Stop() error {
 
 		select {
 		case <-done:
-			// Jailer process exited gracefully
+			zap.L().Info("jailer process stopped gracefully", 
+				zap.String("sandbox_id", p.files.SandboxID))
 		case <-time.After(10 * time.Second):
 			// Check process state after timeout
 			state, err := getProcessState(jailerPid)
@@ -1309,7 +1300,9 @@ func (p *Process) Stop() error {
 				p.cmd.Process.Kill()
 			}
 			<-done
-			zap.L().Info("sent SIGKILL to jailer process because it was not responding to SIGTERM for 10 seconds", logger.WithSandboxID(p.files.SandboxID))
+			zap.L().Info("force killed jailer process after timeout", 
+				zap.String("sandbox_id", p.files.SandboxID),
+				zap.Duration("timeout", 10*time.Second))
 		}
 	}
 
@@ -1319,6 +1312,9 @@ func (p *Process) Stop() error {
 	}
 
 	// Cleanup bind mounts before removing jail directory
+	zap.L().Info("cleaning up jail resources", 
+		zap.String("jail_root", p.jailRoot),
+		zap.String("sandbox_id", p.files.SandboxID))
 	jailKernel := filepath.Join(p.jailRoot, "kernel")
 	if _, err := os.Stat(jailKernel); err == nil {
 		// Try to unmount kernel bind mount (ignore errors if not mounted)
@@ -1348,6 +1344,8 @@ func (p *Process) Stop() error {
 	// Cleanup jail directory
 	jailPath := filepath.Dir(p.jailRoot)
 	os.RemoveAll(jailPath)
+	zap.L().Info("jail cleanup completed", 
+		zap.String("sandbox_id", p.files.SandboxID))
 
 	return nil
 }
@@ -1401,14 +1399,10 @@ func (p *Process) enterNetworkNamespace() error {
 	// Get the namespace path for this slot
 	namespacePath := filepath.Join("/var/run/netns", p.slot.NamespaceID())
 	
-	zap.L().Info("checking network namespace existence", zap.String("namespace_path", namespacePath))
-	
 	// Check if the namespace exists
 	if _, err := os.Stat(namespacePath); err != nil {
 		return fmt.Errorf("network namespace %s does not exist: %w", namespacePath, err)
 	}
-	
-	zap.L().Info("network namespace exists, getting handle")
 	
 	// Get the namespace
 	netns, err := ns.GetNS(namespacePath)
@@ -1417,15 +1411,15 @@ func (p *Process) enterNetworkNamespace() error {
 	}
 	defer netns.Close()
 	
-	zap.L().Info("setting network namespace for current process")
-	
 	// Set the namespace for this process
 	// This is permanent - the process will remain in this namespace
 	if err := netns.Set(); err != nil {
 		return fmt.Errorf("failed to enter network namespace %s: %w", namespacePath, err)
 	}
 	
-	zap.L().Info("successfully switched to network namespace", zap.String("namespace_path", namespacePath))
+	zap.L().Info("switched to network namespace for jailer", 
+		zap.String("namespace_path", namespacePath),
+		zap.String("namespace_id", p.slot.NamespaceID()))
 	return nil
 }
 
