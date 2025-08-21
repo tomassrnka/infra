@@ -37,6 +37,13 @@ resource "google_storage_bucket" "jailer_versions_bucket" {
   }
 }
 
+# Grant read access to instances service account
+resource "google_storage_bucket_iam_member" "jailer_versions_instances_viewer" {
+  bucket = google_storage_bucket.jailer_versions_bucket.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:e2b-infra-instances@${var.gcp_project_id}.iam.gserviceaccount.com"
+}
+
 # Output for reference
 output "jailer_versions_bucket_name" {
   value = google_storage_bucket.jailer_versions_bucket.name

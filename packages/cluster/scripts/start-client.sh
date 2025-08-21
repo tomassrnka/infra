@@ -47,6 +47,34 @@ echo "$SWAPFILE none swap sw 0 0" | sudo tee -a /etc/fstab
 sudo sysctl vm.swappiness=10
 sudo sysctl vm.vfs_cache_pressure=50
 
+# Setup Firecracker jailer directories and binaries
+echo "Setting up Firecracker jailer..."
+sudo mkdir -p /jailer-versions
+sudo mkdir -p /srv/jailer
+sudo chmod 755 /jailer-versions /srv/jailer
+
+# Download jailer binaries from project bucket
+# Get GCP project ID from metadata server
+GCP_PROJECT_ID=$(curl -s "http://metadata.google.internal/computeMetadata/v1/project/project-id" -H "Metadata-Flavor: Google" 2>/dev/null || echo "")
+if [ -n "$GCP_PROJECT_ID" ]; then
+    echo "Downloading jailer binaries from gs://${GCP_PROJECT_ID}-jailer-versions..."
+    sudo gsutil -m cp -r "gs://${GCP_PROJECT_ID}-jailer-versions/*" "/jailer-versions/" 2>/dev/null || {
+        echo "Warning: Jailer binaries not available in project bucket, trying public bucket..."
+        sudo gsutil -m cp -r "gs://e2b-prod-public-builds/jailers/*" "/jailer-versions/" 2>/dev/null || echo "Warning: Could not download jailer binaries"
+    }
+else
+    echo "Warning: Could not determine GCP project ID, skipping jailer download"
+fi
+
+# Set proper permissions for jailer binaries
+if [ -d "/jailer-versions" ]; then
+    sudo chmod -R 755 /jailer-versions
+    # Ensure all jailer binaries are executable
+    sudo find /jailer-versions -name "jailer" -type f -exec chmod +x {} \;
+    echo "Jailer setup complete. Available versions:"
+    ls -la /jailer-versions/ 2>/dev/null || echo "No jailer versions found"
+fi
+
 # Add tmpfs for snapshotting
 # TODO: Parametrize this
 sudo mkdir -p /mnt/snapshot-cache
